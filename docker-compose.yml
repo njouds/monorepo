@@ -1,0 +1,184 @@
+version: "3.9"
+
+x-common-envs:
+  &common-envs
+
+  DB_HOST: "db"
+  DB_USER: "postgres"
+  DB_PASSWORD: "password"
+  DB_PORT: 5432
+
+  REDIS_HOST: redis
+  REDIS_PORT: 6379
+
+  LOGGING_LEVEL: DEBUG
+
+  SMTP_HOST: "mailhog"
+  SMTP_PORT: 1025
+  SMTP_SENDER: "local-sender"
+
+x-User-envs:
+  &User-envs
+  <<: *common-envs
+  APP_NAME: "User"
+  DB_NAME: "User_db"
+  CELERY_BROKER_URL: redis://redis:6379/1
+  REDIS_DB: 0
+
+
+x-User-build-volumes:
+  &User-build-volumes
+  build:
+    context: .
+    dockerfile: "./Dockerfile"
+    args:
+      APP_NAME: User
+  volumes:
+    - ./commons/:/app/commons
+    - ./User/:/app/User
+    - ./conftest.py:/app/conftest.py
+    - ./.github/linters/tox.ini:/app/tox.ini
+  environment:
+    <<: *User-envs
+
+x-Courses-envs:
+  &Courses-envs
+  <<: *common-envs
+  APP_NAME: "Courses"
+  DB_NAME: "Courses_db"
+  CELERY_BROKER_URL: redis://redis:6379/3
+  REDIS_DB: 1
+
+
+x-Courses-build-volumes:
+  &Courses-build-volumes
+  build:
+    context: .
+    dockerfile: "./Dockerfile"
+    args:
+      APP_NAME: Courses
+  volumes:
+    - ./commons/:/app/commons
+    - ./Courses/:/app/Courses
+    - ./conftest.py:/app/conftest.py
+    - ./.github/linters/tox.ini:/app/tox.ini
+  environment:
+    <<: *Courses-envs
+
+services:
+  # < =========================================================== >
+  # < ==================== COMMON SERVICES ====================== >
+  # < =========================================================== >
+  db:
+    ports:
+      - "5440:5432"
+    image: postgres
+    volumes:
+      - datebase:/var/lib/postgresql/data
+    environment:
+      POSTGRES_PASSWORD: password
+
+  redis:
+    image: redis
+    ports:
+      - "6380:6379"
+
+  mailhog:
+    image: mailhog/mailhog
+    ports:
+      - 1025:1025 # smtp server
+      - 8025:8025 # web ui. Visit http://localhost:8025/ to check emails
+    restart: unless-stopped
+    logging:
+      driver: none
+
+  # < =========================================================== >
+  # < ===================== User SERVICES ======================= >
+  # < =========================================================== >
+
+  User-api:
+    restart: unless-stopped
+    depends_on:
+      - db
+      - redis
+      - User-celery
+      - User-celery-beat
+    ports:
+      - "3001:80"
+    command: /start-reload.sh
+    <<: *User-build-volumes
+
+  User-pytest:
+    depends_on:
+      - db
+      - redis
+      - mailhog
+    command: pytest
+    <<: *User-build-volumes
+    environment:
+      <<: *User-envs
+      ENVIRONMENT: "testing"
+      DB_NAME: "User_testing"
+
+  User-celery:
+    restart: unless-stopped
+    depends_on:
+      - redis
+      - db
+      - mailhog
+    command: watchmedo auto-restart -p="*.py" -R celery -- -A User.celery_worker.worker worker --loglevel=debug
+    <<: *User-build-volumes
+  
+  User-celery-beat:
+    restart: unless-stopped
+    depends_on:
+      - redis
+    command: "celery -A User.celery_worker.beat beat --loglevel=debug"
+    <<: *User-build-volumes
+
+  # < =========================================================== >
+  # < ===================== Courses SERVICES ======================= >
+  # < =========================================================== >
+
+  Courses-api:
+    restart: unless-stopped
+    depends_on:
+      - db
+      - redis
+      - Courses-celery
+      - Courses-celery-beat
+    ports:
+      - "3002:80"
+    command: /start-reload.sh
+    <<: *Courses-build-volumes
+
+  Courses-pytest:
+    depends_on:
+      - db
+      - redis
+      - mailhog
+    command: pytest
+    <<: *Courses-build-volumes
+    environment:
+      <<: *Courses-envs
+      ENVIRONMENT: "testing"
+      DB_NAME: "Courses_testing"
+
+  Courses-celery:
+    restart: unless-stopped
+    depends_on:
+      - redis
+      - db
+      - mailhog
+    command: watchmedo auto-restart -p="*.py" -R celery -- -A Courses.celery_worker.worker worker --loglevel=debug
+    <<: *Courses-build-volumes
+
+  Courses-celery-beat:
+    restart: unless-stopped
+    depends_on:
+      - redis
+    command: "celery -A Courses.celery_worker.beat beat --loglevel=debug"
+    <<: *Courses-build-volumes
+
+volumes:
+  datebase:

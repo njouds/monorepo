@@ -1,0 +1,35 @@
+---
+name: Lint Code Base
+
+on:
+  pull_request:
+    branches: [staging]
+
+jobs:
+  build:
+    name: Lint Code Base
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+
+      - name: Lint Code Base
+        uses: github/super-linter@v4
+        env:
+          VALIDATE_ALL_CODEBASE: false
+          VALIDATE_GITLEAKS: false
+          VALIDATE_GITHUB_ACTIONS: false
+          VALIDATE_DOCKERFILE: false
+          VALIDATE_DOCKERFILE_HADOLINT: false
+          VALIDATE_PYTHON_PYLINT: false
+          VALIDATE_PYTHON_MYPY: false
+          FILTER_REGEX_EXCLUDE: .*alembic/.*
+          VALIDATE_HTML: false # TODO: add formatter to dev container and enable this
+          PYTHON_FLAKE8_CONFIG_FILE: tox.ini
+          PYTHON_ISORT_CONFIG_FILE: tox.ini
+          LOG_LEVEL: NOTICE
+          DEFAULT_BRANCH: staging
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

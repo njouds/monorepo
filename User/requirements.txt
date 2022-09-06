@@ -1,0 +1,4 @@
+
+-r ../commons/requirements.txt
+
+# app spesific requiremntes 
